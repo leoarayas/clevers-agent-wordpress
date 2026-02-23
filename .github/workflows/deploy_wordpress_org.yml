@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Tag or branch to deploy (recommended: vX.Y.Z)
+        description: "Tag or branch to deploy (recommended: vX.Y.Z)"
         required: true
         type: string
 
