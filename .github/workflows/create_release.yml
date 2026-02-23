@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version semver (example: 1.2.3)
+        description: "Version semver (example: 1.2.3)"
         required: true
         type: string
       target_branch:
