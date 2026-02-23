@@ -1,0 +1,35 @@
+name: Deploy to WordPress.org
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Tag or branch to deploy (recommended: vX.Y.Z)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref_name, 'v')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Deploy plugin to WordPress.org (SVN)
+        uses: 10up/action-wordpress-plugin-deploy@stable
+        env:
+          SLUG: clevers-agent
+          SVN_USERNAME: ${{ secrets.WORDPRESS_ORG_USERNAME }}
+          SVN_PASSWORD: ${{ secrets.WORDPRESS_ORG_PASSWORD }}
+        with:
+          generate-zip: false

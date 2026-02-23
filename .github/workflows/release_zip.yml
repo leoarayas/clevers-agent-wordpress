@@ -1,0 +1,111 @@
+name: Build & Attach Release ZIP
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to build (tag/branch/SHA). Empty = current default branch.
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  PLUGIN_SLUG: clevers-agent
+  PLUGIN_MAIN: clevers-agent.php
+  DISTIGNORE: .distignore
+  BUILD_ROOT: .release-build
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          tools: composer
+
+      - name: Set up Node (optional)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Composer install (no-dev)
+        if: hashFiles('composer.json') != ''
+        run: composer install --no-dev --prefer-dist --no-interaction --no-progress
+
+      - name: NPM install
+        if: hashFiles('package.json') != ''
+        run: npm ci
+
+      - name: NPM build
+        if: hashFiles('package.json') != ''
+        run: npm run build --if-present
+
+      - name: Validate plugin header Version vs tag (release only)
+        if: github.event_name == 'release'
+        shell: bash
+        run: |
+          HEADER_VERSION=$(grep -Ei '^[[:space:]]*[*#/]{0,2}[[:space:]]*Version:[[:space:]]*[0-9]+([.][0-9]+){1,3}' -m1 "$PLUGIN_MAIN" | sed -E 's/.*Version:[[:space:]]*([0-9]+([.][0-9]+){1,3}).*/\1/' || true)
+          TAG_STRIPPED="${GITHUB_REF_NAME#v}"
+          echo "Header Version: $HEADER_VERSION"
+          echo "Tag Version: $TAG_STRIPPED"
+          if [ -z "$HEADER_VERSION" ]; then
+            echo "::error::Could not read plugin header version."
+            exit 1
+          fi
+          if [ "$HEADER_VERSION" != "$TAG_STRIPPED" ]; then
+            echo "::error::Plugin header version does not match the release tag."
+            exit 1
+          fi
+
+      - name: Prepare build folders
+        shell: bash
+        run: |
+          rm -rf "$BUILD_ROOT"
+          mkdir -p "$BUILD_ROOT/dist" "$BUILD_ROOT/$PLUGIN_SLUG"
+
+      - name: Stage plugin files
+        shell: bash
+        run: |
+          RSYNC_EXCLUDES=()
+          if [ -f "$DISTIGNORE" ]; then
+            RSYNC_EXCLUDES+=(--exclude-from="$DISTIGNORE")
+          fi
+          rsync -a             --exclude "$PLUGIN_SLUG"             --exclude "$BUILD_ROOT"             "${RSYNC_EXCLUDES[@]}"             ./ "$BUILD_ROOT/$PLUGIN_SLUG"
+
+      - name: Read version for zip name
+        id: ver
+        shell: bash
+        run: |
+          VERSION=$(grep -Ei '^[[:space:]]*[*#/]{0,2}[[:space:]]*Version:[[:space:]]*[0-9]+([.][0-9]+){1,3}' -m1 "$PLUGIN_MAIN" | sed -E 's/.*Version:[[:space:]]*([0-9]+([.][0-9]+){1,3}).*/\1/' || true)
+          if [ -z "$VERSION" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Zip plugin
+        shell: bash
+        run: |
+          cd "$BUILD_ROOT"
+          zip -r "dist/${PLUGIN_SLUG}-${{ steps.ver.outputs.version }}.zip" "$PLUGIN_SLUG"
+          ls -lh dist
+
+      - name: Attach ZIP to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.BUILD_ROOT }}/dist/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
