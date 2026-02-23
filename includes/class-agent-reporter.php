@@ -8,7 +8,7 @@ class Clevers_Agent_Reporter {
     public function send_report($manual = false) {
         $options = clevers_agent_get_options();
 
-        if (empty($options['enabled'])) {
+        if (!$manual && empty($options['enabled'])) {
             return new WP_Error('clevers_agent_disabled', 'Clevers agent disabled.');
         }
 

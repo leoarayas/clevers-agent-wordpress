@@ -7,14 +7,19 @@ if (!defined('ABSPATH')) {
 class Clevers_Agent_Admin {
     private $reporter;
     private $scheduler;
+    private $remote;
 
-    public function __construct($reporter, $scheduler) {
+    public function __construct($reporter, $scheduler, $remote) {
         $this->reporter = $reporter;
         $this->scheduler = $scheduler;
+        $this->remote = $remote;
 
         add_action('admin_menu', array($this, 'register_menu'));
         add_action('admin_init', array($this, 'register_settings'));
         add_action('admin_post_clevers_agent_send_now', array($this, 'handle_send_now'));
+        add_action('admin_post_clevers_agent_register_now', array($this, 'handle_register_now'));
+        add_action('admin_post_clevers_agent_heartbeat_now', array($this, 'handle_heartbeat_now'));
+        add_action('admin_post_clevers_agent_poll_now', array($this, 'handle_poll_now'));
     }
 
     public function register_menu() {
@@ -32,12 +37,13 @@ class Clevers_Agent_Admin {
             'sanitize_callback' => array($this, 'sanitize_options'),
         ));
 
-        add_settings_section('clevers_agent_main', 'Configuración', '__return_false', 'clevers-agent');
+        add_settings_section('clevers_agent_main', 'Configuracion', '__return_false', 'clevers-agent');
 
         add_settings_field('enabled', 'Enviar reportes', array($this, 'render_enabled'), 'clevers-agent', 'clevers_agent_main');
         add_settings_field('agent_key', 'Agent Key', array($this, 'render_agent_key'), 'clevers-agent', 'clevers_agent_main');
         add_settings_field('endpoint_url', 'Endpoint URL', array($this, 'render_endpoint_url'), 'clevers-agent', 'clevers_agent_main');
         add_settings_field('interval_hours', 'Intervalo (horas)', array($this, 'render_interval'), 'clevers-agent', 'clevers_agent_main');
+        add_settings_field('remote_policy', 'Politicas remotas', array($this, 'render_remote_policy'), 'clevers-agent', 'clevers_agent_main');
     }
 
     public function sanitize_options($input) {
@@ -47,6 +53,11 @@ class Clevers_Agent_Admin {
         $output['agent_key'] = sanitize_text_field($input['agent_key'] ?? '');
         $output['endpoint_url'] = esc_url_raw(trim($input['endpoint_url'] ?? ''));
         $output['interval_hours'] = max(1, intval($input['interval_hours'] ?? 6));
+        $output['remote_allow_read'] = !empty($input['remote_allow_read']);
+        $output['remote_allow_plugin_toggle'] = !empty($input['remote_allow_plugin_toggle']);
+        $output['remote_allow_plugin_updates'] = !empty($input['remote_allow_plugin_updates']);
+        $output['remote_allow_cron'] = !empty($input['remote_allow_cron']);
+        $output['remote_allow_report_actions'] = !empty($input['remote_allow_report_actions']);
 
         return $output;
     }
@@ -56,26 +67,22 @@ class Clevers_Agent_Admin {
             return;
         }
 
-        if (isset($_GET['clevers_agent_sent'])) {
-            $sent = sanitize_text_field(wp_unslash($_GET['clevers_agent_sent']));
-            if ($sent === '1') {
-                echo '<div class="notice notice-success"><p>Reporte enviado.</p></div>';
-            } else {
-                echo '<div class="notice notice-error"><p>No se pudo enviar el reporte.</p></div>';
-            }
-        }
+        $this->render_notice();
 
-        $options = clevers_agent_get_options();
+        $remote_state = $this->remote->get_status_summary();
+        $audit_rows = clevers_agent_get_command_audit();
+
         $last_sent = get_option(CLEVERS_AGENT_LAST_SENT_AT, '');
         $last_code = get_option(CLEVERS_AGENT_LAST_RESPONSE_CODE, '');
         $last_error = get_option(CLEVERS_AGENT_LAST_ERROR, '');
 
-        $next_run = wp_next_scheduled(Clevers_Agent_Scheduler::CRON_HOOK);
-        $next_run_display = $next_run ? date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $next_run) : 'No programado';
+        $next_report = wp_next_scheduled(Clevers_Agent_Scheduler::CRON_HOOK);
+        $next_poll = wp_next_scheduled(Clevers_Agent_Scheduler::POLL_CRON_HOOK);
 
         ?>
         <div class="wrap">
             <h1>Clevers Website Monitoring Agent</h1>
+
             <form action="options.php" method="post">
                 <?php
                 settings_fields('clevers_agent_settings');
@@ -84,32 +91,113 @@ class Clevers_Agent_Admin {
                 ?>
             </form>
 
-            <h2>Envio manual</h2>
-            <form action="<?php echo esc_url(admin_url('admin-post.php')); ?>" method="post">
-                <?php wp_nonce_field('clevers_agent_send_now'); ?>
-                <input type="hidden" name="action" value="clevers_agent_send_now">
-                <?php submit_button('Send now', 'secondary'); ?>
-            </form>
+            <h2>Acciones manuales</h2>
+            <p>Usa estas acciones para probar conectividad, registro y ejecucion remota desde esta instalacion.</p>
 
-            <h2>Estado</h2>
-            <table class="widefat striped" style="max-width: 720px;">
+            <div style="display:flex; gap:10px; flex-wrap:wrap; margin:12px 0 20px;">
+                <?php $this->render_post_button('clevers_agent_send_now', 'Send report', 'secondary'); ?>
+                <?php $this->render_post_button('clevers_agent_register_now', 'Register site', 'secondary'); ?>
+                <?php $this->render_post_button('clevers_agent_heartbeat_now', 'Send heartbeat', 'secondary'); ?>
+                <?php $this->render_post_button('clevers_agent_poll_now', 'Poll commands', 'secondary'); ?>
+            </div>
+
+            <h2>Estado de reportes</h2>
+            <table class="widefat striped" style="max-width: 900px; margin-bottom: 20px;">
                 <tbody>
                     <tr>
-                        <th>Último envío</th>
+                        <th>Ultimo envio</th>
                         <td><?php echo esc_html($last_sent ?: 'Sin datos'); ?></td>
                     </tr>
                     <tr>
-                        <th>Último código</th>
+                        <th>Ultimo codigo</th>
                         <td><?php echo esc_html($last_code === '' ? 'Sin datos' : $last_code); ?></td>
                     </tr>
                     <tr>
-                        <th>Último error</th>
+                        <th>Ultimo error</th>
                         <td><?php echo esc_html($last_error ?: 'Sin datos'); ?></td>
                     </tr>
                     <tr>
-                        <th>Próxima ejecución</th>
-                        <td><?php echo esc_html($next_run_display); ?></td>
+                        <th>Proximo reporte (cron)</th>
+                        <td><?php echo esc_html($this->format_scheduled_time($next_report)); ?></td>
                     </tr>
+                </tbody>
+            </table>
+
+            <h2>Estado de control remoto (MVP)</h2>
+            <table class="widefat striped" style="max-width: 900px;">
+                <tbody>
+                    <tr>
+                        <th>Site ID remoto</th>
+                        <td><?php echo esc_html($remote_state['site_id'] ?: 'No registrado'); ?></td>
+                    </tr>
+                    <tr>
+                        <th>Registrado en</th>
+                        <td><?php echo esc_html($remote_state['registered_at'] ?: 'Sin datos'); ?></td>
+                    </tr>
+                    <tr>
+                        <th>Ultimo registro (codigo/error)</th>
+                        <td><?php echo esc_html(($remote_state['last_register_code'] === '' ? 'Sin datos' : $remote_state['last_register_code']) . ' / ' . ($remote_state['last_register_error'] ?: '-')); ?></td>
+                    </tr>
+                    <tr>
+                        <th>Ultimo heartbeat</th>
+                        <td><?php echo esc_html($remote_state['last_heartbeat_at'] ?: 'Sin datos'); ?></td>
+                    </tr>
+                    <tr>
+                        <th>Heartbeat (codigo/error)</th>
+                        <td><?php echo esc_html(($remote_state['last_heartbeat_code'] === '' ? 'Sin datos' : $remote_state['last_heartbeat_code']) . ' / ' . ($remote_state['last_heartbeat_error'] ?: '-')); ?></td>
+                    </tr>
+                    <tr>
+                        <th>Ultimo poll</th>
+                        <td><?php echo esc_html($remote_state['last_poll_at'] ?: 'Sin datos'); ?></td>
+                    </tr>
+                    <tr>
+                        <th>Poll (codigo/error)</th>
+                        <td><?php echo esc_html(($remote_state['last_poll_code'] === '' ? 'Sin datos' : $remote_state['last_poll_code']) . ' / ' . ($remote_state['last_poll_error'] ?: '-')); ?></td>
+                    </tr>
+                    <tr>
+                        <th>Proximo poll (cron)</th>
+                        <td><?php echo esc_html($this->format_scheduled_time($next_poll)); ?></td>
+                    </tr>
+                    <tr>
+                        <th>Ultimo comando</th>
+                        <td><?php echo esc_html($this->format_last_command($remote_state)); ?></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <p style="margin-top:12px; color:#555;">
+                Nota: este MVP usa modelo pull (WordPress consulta comandos al backend). Comandos soportados: ping, snapshot, listar/activar/desactivar/actualizar plugin, cron, report y heartbeat.
+            </p>
+
+            <h2>Auditoria local de comandos</h2>
+            <table class="widefat striped" style="max-width: 1200px;">
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>ID</th>
+                        <th>Comando</th>
+                        <th>Estado</th>
+                        <th>Duracion</th>
+                        <th>Mensaje</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($audit_rows)) : ?>
+                        <tr>
+                            <td colspan="6">Sin comandos ejecutados aun.</td>
+                        </tr>
+                    <?php else : ?>
+                        <?php foreach ($audit_rows as $row) : ?>
+                            <tr>
+                                <td><?php echo esc_html(isset($row['executed_at']) ? $row['executed_at'] : ''); ?></td>
+                                <td><?php echo esc_html(isset($row['id']) ? $row['id'] : ''); ?></td>
+                                <td><?php echo esc_html(isset($row['type']) ? $row['type'] : ''); ?></td>
+                                <td><?php echo esc_html(isset($row['status']) ? $row['status'] : ''); ?></td>
+                                <td><?php echo esc_html(isset($row['duration_ms']) ? $row['duration_ms'] . ' ms' : ''); ?></td>
+                                <td><?php echo esc_html(isset($row['message']) ? $row['message'] : ''); ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </tbody>
             </table>
         </div>
@@ -121,7 +209,7 @@ class Clevers_Agent_Admin {
         ?>
         <label>
             <input type="checkbox" name="<?php echo esc_attr(CLEVERS_AGENT_OPTIONS_KEY); ?>[enabled]" value="1" <?php checked(!empty($options['enabled'])); ?> />
-            Habilitar envíos automáticos
+            Habilitar envios automaticos del agente (reportes + polling remoto por cron)
         </label>
         <?php
     }
@@ -137,6 +225,7 @@ class Clevers_Agent_Admin {
         $options = clevers_agent_get_options();
         ?>
         <input type="url" class="regular-text" name="<?php echo esc_attr(CLEVERS_AGENT_OPTIONS_KEY); ?>[endpoint_url]" value="<?php echo esc_attr($options['endpoint_url']); ?>" placeholder="https://app.tu-dominio.com" />
+        <p class="description">Base URL del backend central (sin ruta final). Ejemplo: https://app.clevers.cl</p>
         <?php
     }
 
@@ -144,20 +233,173 @@ class Clevers_Agent_Admin {
         $options = clevers_agent_get_options();
         ?>
         <input type="number" min="1" max="168" name="<?php echo esc_attr(CLEVERS_AGENT_OPTIONS_KEY); ?>[interval_hours]" value="<?php echo esc_attr($options['interval_hours']); ?>" />
+        <p class="description">Frecuencia del reporte de telemetria. El polling remoto usa 5 minutos (fijo en este MVP).</p>
+        <?php
+    }
+
+    public function render_remote_policy() {
+        $options = clevers_agent_get_options();
+        $key = esc_attr(CLEVERS_AGENT_OPTIONS_KEY);
+        ?>
+        <fieldset>
+            <label style="display:block; margin-bottom:4px;">
+                <input type="checkbox" name="<?php echo $key; ?>[remote_allow_read]" value="1" <?php checked(!empty($options['remote_allow_read'])); ?> />
+                Permitir comandos de lectura (`ping`, `get_snapshot`, `list_plugins`, `list_themes`)
+            </label>
+            <label style="display:block; margin-bottom:4px;">
+                <input type="checkbox" name="<?php echo $key; ?>[remote_allow_plugin_toggle]" value="1" <?php checked(!empty($options['remote_allow_plugin_toggle'])); ?> />
+                Permitir activar/desactivar plugins remotamente
+            </label>
+            <label style="display:block; margin-bottom:4px;">
+                <input type="checkbox" name="<?php echo $key; ?>[remote_allow_plugin_updates]" value="1" <?php checked(!empty($options['remote_allow_plugin_updates'])); ?> />
+                Permitir actualizar plugins remotamente
+            </label>
+            <label style="display:block; margin-bottom:4px;">
+                <input type="checkbox" name="<?php echo $key; ?>[remote_allow_cron]" value="1" <?php checked(!empty($options['remote_allow_cron'])); ?> />
+                Permitir ejecutar cron remoto (`run_due_cron`)
+            </label>
+            <label style="display:block;">
+                <input type="checkbox" name="<?php echo $key; ?>[remote_allow_report_actions]" value="1" <?php checked(!empty($options['remote_allow_report_actions'])); ?> />
+                Permitir acciones de agente (`send_report`, `send_heartbeat`)
+            </label>
+            <p class="description">Recomendado: dejar desactivadas las acciones sensibles hasta tener el backend con firmas y auditoria completa.</p>
+        </fieldset>
         <?php
     }
 
     public function handle_send_now() {
-        if (!current_user_can('manage_options')) {
-            wp_die('Unauthorized');
-        }
-
+        $this->assert_admin();
         check_admin_referer('clevers_agent_send_now');
 
         $response = $this->reporter->send_report(true);
+        $this->redirect_with_notice('send_report', !is_wp_error($response), is_wp_error($response) ? $response->get_error_message() : 'Reporte enviado.');
+    }
 
-        $redirect = add_query_arg('clevers_agent_sent', is_wp_error($response) ? '0' : '1', wp_get_referer());
+    public function handle_register_now() {
+        $this->assert_admin();
+        check_admin_referer('clevers_agent_register_now');
+
+        $response = $this->remote->register_site(true);
+        $this->redirect_with_notice('register', !is_wp_error($response), is_wp_error($response) ? $response->get_error_message() : 'Registro remoto ejecutado.');
+    }
+
+    public function handle_heartbeat_now() {
+        $this->assert_admin();
+        check_admin_referer('clevers_agent_heartbeat_now');
+
+        $response = $this->remote->send_heartbeat(true);
+        $this->redirect_with_notice('heartbeat', !is_wp_error($response), is_wp_error($response) ? $response->get_error_message() : 'Heartbeat enviado.');
+    }
+
+    public function handle_poll_now() {
+        $this->assert_admin();
+        check_admin_referer('clevers_agent_poll_now');
+
+        $response = $this->remote->poll_commands(true);
+        if (is_wp_error($response)) {
+            $this->redirect_with_notice('poll', false, $response->get_error_message());
+        }
+
+        $executed = isset($response['commands_executed']) ? (int) $response['commands_executed'] : 0;
+        $this->redirect_with_notice('poll', true, sprintf('Polling ejecutado. Comandos procesados: %d', $executed));
+    }
+
+    private function render_notice() {
+        $notice_nonce_valid = false;
+        if (isset($_GET['_clevers_agent_notice_nonce'])) {
+            $notice_nonce_valid = wp_verify_nonce(
+                sanitize_text_field(wp_unslash($_GET['_clevers_agent_notice_nonce'])),
+                'clevers_agent_notice'
+            );
+        }
+
+        if (!$notice_nonce_valid || !isset($_GET['clevers_agent_notice_ok'])) {
+            return;
+        }
+
+        $ok = sanitize_text_field(wp_unslash($_GET['clevers_agent_notice_ok'])) === '1';
+        $action = isset($_GET['clevers_agent_notice_action']) ? sanitize_text_field(wp_unslash($_GET['clevers_agent_notice_action'])) : 'accion';
+        $message = isset($_GET['clevers_agent_notice_message']) ? sanitize_text_field(wp_unslash($_GET['clevers_agent_notice_message'])) : '';
+
+        $class = $ok ? 'notice notice-success' : 'notice notice-error';
+        if ($message === '') {
+            $message = $ok ? 'Operacion exitosa.' : 'Operacion fallida.';
+        }
+
+        echo '<div class="' . esc_attr($class) . '"><p><strong>' . esc_html($action) . ':</strong> ' . esc_html($message) . '</p></div>';
+    }
+
+    private function render_post_button($action, $label, $button_class) {
+        ?>
+        <form action="<?php echo esc_url(admin_url('admin-post.php')); ?>" method="post" style="display:inline-block;">
+            <?php wp_nonce_field($action); ?>
+            <input type="hidden" name="action" value="<?php echo esc_attr($action); ?>">
+            <?php submit_button($label, $button_class, '', false); ?>
+        </form>
+        <?php
+    }
+
+    private function assert_admin() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+    }
+
+    private function redirect_with_notice($action, $ok, $message) {
+        $redirect_url = wp_get_referer();
+        if (!$redirect_url) {
+            $redirect_url = admin_url('options-general.php?page=clevers-agent');
+        }
+
+        $redirect = add_query_arg(
+            array(
+                'clevers_agent_notice_action' => sanitize_key($action),
+                'clevers_agent_notice_ok' => $ok ? '1' : '0',
+                'clevers_agent_notice_message' => $this->truncate_notice_message($message),
+                '_clevers_agent_notice_nonce' => wp_create_nonce('clevers_agent_notice'),
+            ),
+            $redirect_url
+        );
+
         wp_safe_redirect($redirect);
         exit;
+    }
+
+    private function format_scheduled_time($timestamp) {
+        if (!$timestamp) {
+            return 'No programado';
+        }
+
+        return date_i18n(get_option('date_format') . ' ' . get_option('time_format'), $timestamp);
+    }
+
+    private function format_last_command($state) {
+        if (empty($state['last_command_at'])) {
+            return 'Sin datos';
+        }
+
+        $parts = array(
+            $state['last_command_at'],
+            $state['last_command_type'] ?: '-',
+            $state['last_command_status'] ?: '-',
+        );
+
+        if (!empty($state['last_command_id'])) {
+            $parts[] = 'id=' . $state['last_command_id'];
+        }
+        if (!empty($state['last_command_message'])) {
+            $parts[] = $state['last_command_message'];
+        }
+
+        return implode(' | ', $parts);
+    }
+
+    private function truncate_notice_message($message) {
+        $message = wp_strip_all_tags((string) $message);
+        if (strlen($message) <= 180) {
+            return $message;
+        }
+
+        return substr($message, 0, 177) . '...';
     }
 }
