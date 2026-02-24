@@ -243,23 +243,23 @@ class Clevers_Agent_Admin {
         ?>
         <fieldset>
             <label style="display:block; margin-bottom:4px;">
-                <input type="checkbox" name="<?php echo $key; ?>[remote_allow_read]" value="1" <?php checked(!empty($options['remote_allow_read'])); ?> />
+                <input type="checkbox" name="<?php echo esc_attr( $key ); ?>[remote_allow_read]" value="1" <?php checked(!empty($options['remote_allow_read'])); ?> />
                 Permitir comandos de lectura (`ping`, `get_snapshot`, `list_plugins`, `list_themes`)
             </label>
             <label style="display:block; margin-bottom:4px;">
-                <input type="checkbox" name="<?php echo $key; ?>[remote_allow_plugin_toggle]" value="1" <?php checked(!empty($options['remote_allow_plugin_toggle'])); ?> />
+                <input type="checkbox" name="<?php echo esc_attr( $key ); ?>[remote_allow_plugin_toggle]" value="1" <?php checked(!empty($options['remote_allow_plugin_toggle'])); ?> />
                 Permitir activar/desactivar plugins remotamente
             </label>
             <label style="display:block; margin-bottom:4px;">
-                <input type="checkbox" name="<?php echo $key; ?>[remote_allow_plugin_updates]" value="1" <?php checked(!empty($options['remote_allow_plugin_updates'])); ?> />
+                <input type="checkbox" name="<?php echo esc_attr( $key ); ?>[remote_allow_plugin_updates]" value="1" <?php checked(!empty($options['remote_allow_plugin_updates'])); ?> />
                 Permitir actualizar plugins remotamente
             </label>
             <label style="display:block; margin-bottom:4px;">
-                <input type="checkbox" name="<?php echo $key; ?>[remote_allow_cron]" value="1" <?php checked(!empty($options['remote_allow_cron'])); ?> />
+                <input type="checkbox" name="<?php echo esc_attr( $key ); ?>[remote_allow_cron]" value="1" <?php checked(!empty($options['remote_allow_cron'])); ?> />
                 Permitir ejecutar cron remoto (`run_due_cron`)
             </label>
             <label style="display:block;">
-                <input type="checkbox" name="<?php echo $key; ?>[remote_allow_report_actions]" value="1" <?php checked(!empty($options['remote_allow_report_actions'])); ?> />
+                <input type="checkbox" name="<?php echo esc_attr( $key ); ?>[remote_allow_report_actions]" value="1" <?php checked(!empty($options['remote_allow_report_actions'])); ?> />
                 Permitir acciones de agente (`send_report`, `send_heartbeat`)
             </label>
             <p class="description">Recomendado: dejar desactivadas las acciones sensibles hasta tener el backend con firmas y auditoria completa.</p>
