@@ -39,6 +39,8 @@ function clevers_agent_get_options() {
         'remote_allow_read' => true,
         'remote_allow_plugin_toggle' => false,
         'remote_allow_plugin_updates' => false,
+        'remote_allow_theme_updates' => false,
+        'remote_allow_core_updates' => false,
         'remote_allow_cron' => true,
         'remote_allow_report_actions' => true,
     );
@@ -122,6 +124,44 @@ add_action('plugins_loaded', function () {
     $remote = new Clevers_Agent_Remote($reporter);
     $scheduler = new Clevers_Agent_Scheduler($reporter);
     $admin = new Clevers_Agent_Admin($reporter, $scheduler, $remote);
+});
+
+add_action('rest_api_init', function () {
+    register_rest_route('clevers-agent/v1', '/status', array(
+        'methods' => 'GET',
+        'permission_callback' => '__return_true',
+        'callback' => function () {
+            $options = clevers_agent_get_options();
+            $state = clevers_agent_get_remote_state();
+
+            return rest_ensure_response(array(
+                'plugin' => 'clevers-agent',
+                'plugin_name' => 'Clevers Website Monitoring Agent',
+                'version' => defined('CLEVERS_AGENT_VERSION') ? CLEVERS_AGENT_VERSION : null,
+                'wordpress_version' => get_bloginfo('version'),
+                'php_version' => PHP_VERSION,
+                'enabled' => !empty($options['enabled']),
+                'configured' => !empty($options['agent_key']) && !empty($options['endpoint_url']),
+                'registered' => !empty($state['site_id']),
+                'remote' => array(
+                    'site_id_present' => !empty($state['site_id']),
+                    'registered_at' => !empty($state['registered_at']) ? $state['registered_at'] : null,
+                    'last_heartbeat_at' => !empty($state['last_heartbeat_at']) ? $state['last_heartbeat_at'] : null,
+                    'last_poll_at' => !empty($state['last_poll_at']) ? $state['last_poll_at'] : null,
+                    'last_command_at' => !empty($state['last_command_at']) ? $state['last_command_at'] : null,
+                ),
+                'capabilities' => array(
+                    'remote_read' => !empty($options['remote_allow_read']),
+                    'plugin_toggle' => !empty($options['remote_allow_plugin_toggle']),
+                'plugin_updates' => !empty($options['remote_allow_plugin_updates']),
+                'theme_updates' => !empty($options['remote_allow_theme_updates']),
+                'core_updates' => !empty($options['remote_allow_core_updates']),
+                'cron' => !empty($options['remote_allow_cron']),
+                'report_actions' => !empty($options['remote_allow_report_actions']),
+            ),
+            ));
+        },
+    ));
 });
 
 add_action('clevers_agent_send_report', function () {

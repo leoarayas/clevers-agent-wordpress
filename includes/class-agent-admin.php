@@ -56,6 +56,8 @@ class Clevers_Agent_Admin {
         $output['remote_allow_read'] = !empty($input['remote_allow_read']);
         $output['remote_allow_plugin_toggle'] = !empty($input['remote_allow_plugin_toggle']);
         $output['remote_allow_plugin_updates'] = !empty($input['remote_allow_plugin_updates']);
+        $output['remote_allow_theme_updates'] = !empty($input['remote_allow_theme_updates']);
+        $output['remote_allow_core_updates'] = !empty($input['remote_allow_core_updates']);
         $output['remote_allow_cron'] = !empty($input['remote_allow_cron']);
         $output['remote_allow_report_actions'] = !empty($input['remote_allow_report_actions']);
 
@@ -253,6 +255,14 @@ class Clevers_Agent_Admin {
             <label style="display:block; margin-bottom:4px;">
                 <input type="checkbox" name="<?php echo esc_attr( $key ); ?>[remote_allow_plugin_updates]" value="1" <?php checked(!empty($options['remote_allow_plugin_updates'])); ?> />
                 Permitir actualizar plugins remotamente
+            </label>
+            <label style="display:block; margin-bottom:4px;">
+                <input type="checkbox" name="<?php echo esc_attr( $key ); ?>[remote_allow_theme_updates]" value="1" <?php checked(!empty($options['remote_allow_theme_updates'])); ?> />
+                Permitir actualizar temas remotamente
+            </label>
+            <label style="display:block; margin-bottom:4px;">
+                <input type="checkbox" name="<?php echo esc_attr( $key ); ?>[remote_allow_core_updates]" value="1" <?php checked(!empty($options['remote_allow_core_updates'])); ?> />
+                Permitir actualizar WordPress core remotamente
             </label>
             <label style="display:block; margin-bottom:4px;">
                 <input type="checkbox" name="<?php echo esc_attr( $key ); ?>[remote_allow_cron]" value="1" <?php checked(!empty($options['remote_allow_cron'])); ?> />

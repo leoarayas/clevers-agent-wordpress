@@ -184,6 +184,9 @@ class Clevers_Agent_Remote {
             'activate_plugin',
             'deactivate_plugin',
             'update_plugin',
+            'update_theme',
+            'update_core',
+            'update_all',
             'run_due_cron',
             'send_report',
             'send_heartbeat',
@@ -293,6 +296,48 @@ class Clevers_Agent_Remote {
                 }
                 break;
 
+            case 'update_theme':
+                if (!$this->is_command_allowed($type)) {
+                    $message = 'Command blocked by local policy.';
+                    break;
+                }
+                $exec = $this->update_theme_command($payload);
+                if (is_wp_error($exec)) {
+                    $message = $exec->get_error_message();
+                } else {
+                    $status = 'success';
+                    $result_data = $exec;
+                }
+                break;
+
+            case 'update_core':
+                if (!$this->is_command_allowed($type)) {
+                    $message = 'Command blocked by local policy.';
+                    break;
+                }
+                $exec = $this->update_core_command($payload);
+                if (is_wp_error($exec)) {
+                    $message = $exec->get_error_message();
+                } else {
+                    $status = 'success';
+                    $result_data = $exec;
+                }
+                break;
+
+            case 'update_all':
+                if (!$this->is_command_allowed($type, $payload)) {
+                    $message = 'Command blocked by local policy.';
+                    break;
+                }
+                $exec = $this->update_all_command($payload);
+                if (is_wp_error($exec)) {
+                    $message = $exec->get_error_message();
+                } else {
+                    $status = 'success';
+                    $result_data = $exec;
+                }
+                break;
+
             case 'run_due_cron':
                 if (!$this->is_command_allowed($type)) {
                     $message = 'Command blocked by local policy.';
@@ -366,7 +411,7 @@ class Clevers_Agent_Remote {
         return $result;
     }
 
-    private function is_command_allowed($type) {
+    private function is_command_allowed($type, $payload = array()) {
         $options = clevers_agent_get_options();
 
         $read_commands = array('ping', 'get_snapshot', 'list_plugins', 'list_themes');
@@ -381,6 +426,38 @@ class Clevers_Agent_Remote {
 
         if ($type === 'update_plugin') {
             return !empty($options['remote_allow_plugin_updates']);
+        }
+
+        if ($type === 'update_theme') {
+            return !empty($options['remote_allow_theme_updates']);
+        }
+
+        if ($type === 'update_core') {
+            return !empty($options['remote_allow_core_updates']);
+        }
+
+        if ($type === 'update_all') {
+            $run_plugins = !isset($payload['plugins']) || !empty($payload['plugins']);
+            $run_themes = !isset($payload['themes']) || !empty($payload['themes']);
+            $run_core = !isset($payload['core']) || !empty($payload['core']);
+
+            if (!$run_plugins && !$run_themes && !$run_core) {
+                return false;
+            }
+
+            if ($run_plugins && empty($options['remote_allow_plugin_updates'])) {
+                return false;
+            }
+
+            if ($run_themes && empty($options['remote_allow_theme_updates'])) {
+                return false;
+            }
+
+            if ($run_core && empty($options['remote_allow_core_updates'])) {
+                return false;
+            }
+
+            return true;
         }
 
         if ($type === 'run_due_cron') {
@@ -457,6 +534,178 @@ class Clevers_Agent_Remote {
             'plugin_file' => $plugin_file,
             'updated' => true,
         );
+    }
+
+    private function update_theme_command($payload) {
+        $theme_slug = isset($payload['theme_slug']) ? sanitize_key((string) $payload['theme_slug']) : '';
+        if ($theme_slug === '') {
+            return new WP_Error('clevers_agent_missing_theme', 'theme_slug is required.');
+        }
+
+        require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+        require_once ABSPATH . 'wp-admin/includes/update.php';
+
+        wp_update_themes();
+
+        $skin = new Automatic_Upgrader_Skin();
+        $upgrader = new Theme_Upgrader($skin);
+        $upgrade_result = $upgrader->upgrade($theme_slug);
+
+        if (is_wp_error($upgrade_result)) {
+            return $upgrade_result;
+        }
+        if ($upgrade_result === false) {
+            $messages = method_exists($skin, 'get_error_messages') ? $skin->get_error_messages() : '';
+            return new WP_Error('clevers_agent_theme_update_failed', $messages ? wp_strip_all_tags($messages) : 'Theme update failed.');
+        }
+
+        return array(
+            'theme_slug' => $theme_slug,
+            'updated' => true,
+        );
+    }
+
+    private function update_core_command($payload) {
+        require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+        require_once ABSPATH . 'wp-admin/includes/update.php';
+        require_once ABSPATH . 'wp-admin/includes/admin.php';
+
+        wp_version_check();
+        $updates = get_core_updates(array('dismissed' => false));
+
+        if (!is_array($updates)) {
+            return new WP_Error('clevers_agent_core_update_check_failed', 'Could not fetch core updates.');
+        }
+
+        $offer = null;
+        foreach ($updates as $update) {
+            if (isset($update->response) && $update->response !== 'latest') {
+                $offer = $update;
+                break;
+            }
+        }
+
+        if (!$offer) {
+            return array(
+                'updated' => false,
+                'message' => 'WordPress core is already up to date.',
+            );
+        }
+
+        $skin = new Automatic_Upgrader_Skin();
+        $upgrader = new Core_Upgrader($skin);
+        $upgrade_result = $upgrader->upgrade($offer);
+
+        if (is_wp_error($upgrade_result)) {
+            return $upgrade_result;
+        }
+        if ($upgrade_result === false) {
+            $messages = method_exists($skin, 'get_error_messages') ? $skin->get_error_messages() : '';
+            return new WP_Error('clevers_agent_core_update_failed', $messages ? wp_strip_all_tags($messages) : 'WordPress core update failed.');
+        }
+
+        return array(
+            'updated' => true,
+            'target_version' => isset($offer->current) ? (string) $offer->current : '',
+        );
+    }
+
+    private function update_all_command($payload) {
+        $run_plugins = !isset($payload['plugins']) || !empty($payload['plugins']);
+        $run_themes = !isset($payload['themes']) || !empty($payload['themes']);
+        $run_core = !isset($payload['core']) || !empty($payload['core']);
+
+        $results = array();
+        $summary = array(
+            'plugins' => array('requested' => $run_plugins, 'attempted' => 0, 'updated' => 0, 'failed' => 0),
+            'themes' => array('requested' => $run_themes, 'attempted' => 0, 'updated' => 0, 'failed' => 0),
+            'core' => array('requested' => $run_core, 'attempted' => 0, 'updated' => 0, 'failed' => 0),
+        );
+
+        if ($run_plugins) {
+            $plugin_files = $this->get_pending_plugin_updates();
+            foreach ($plugin_files as $plugin_file) {
+                $summary['plugins']['attempted']++;
+                $exec = $this->update_plugin_command(array('plugin_file' => $plugin_file));
+                if (is_wp_error($exec)) {
+                    $summary['plugins']['failed']++;
+                    $results['plugins'][] = array(
+                        'plugin_file' => $plugin_file,
+                        'status' => 'failed',
+                        'message' => $exec->get_error_message(),
+                    );
+                    continue;
+                }
+
+                $summary['plugins']['updated'] += !empty($exec['updated']) ? 1 : 0;
+                $results['plugins'][] = array_merge(array('status' => 'success'), $exec);
+            }
+        }
+
+        if ($run_themes) {
+            $theme_slugs = $this->get_pending_theme_updates();
+            foreach ($theme_slugs as $theme_slug) {
+                $summary['themes']['attempted']++;
+                $exec = $this->update_theme_command(array('theme_slug' => $theme_slug));
+                if (is_wp_error($exec)) {
+                    $summary['themes']['failed']++;
+                    $results['themes'][] = array(
+                        'theme_slug' => $theme_slug,
+                        'status' => 'failed',
+                        'message' => $exec->get_error_message(),
+                    );
+                    continue;
+                }
+
+                $summary['themes']['updated'] += !empty($exec['updated']) ? 1 : 0;
+                $results['themes'][] = array_merge(array('status' => 'success'), $exec);
+            }
+        }
+
+        if ($run_core) {
+            $summary['core']['attempted'] = 1;
+            $exec = $this->update_core_command(array());
+            if (is_wp_error($exec)) {
+                $summary['core']['failed'] = 1;
+                $results['core'] = array(
+                    'status' => 'failed',
+                    'message' => $exec->get_error_message(),
+                );
+            } else {
+                $summary['core']['updated'] = !empty($exec['updated']) ? 1 : 0;
+                $results['core'] = array_merge(array('status' => 'success'), $exec);
+            }
+        }
+
+        return array(
+            'summary' => $summary,
+            'results' => $results,
+            'completed_at' => current_time('mysql'),
+        );
+    }
+
+    private function get_pending_plugin_updates() {
+        require_once ABSPATH . 'wp-admin/includes/update.php';
+        wp_update_plugins();
+
+        $updates = get_site_transient('update_plugins');
+        if (!isset($updates->response) || !is_array($updates->response)) {
+            return array();
+        }
+
+        return array_keys($updates->response);
+    }
+
+    private function get_pending_theme_updates() {
+        require_once ABSPATH . 'wp-admin/includes/update.php';
+        wp_update_themes();
+
+        $updates = get_site_transient('update_themes');
+        if (!isset($updates->response) || !is_array($updates->response)) {
+            return array();
+        }
+
+        return array_keys($updates->response);
     }
 
     private function run_due_cron_command() {
