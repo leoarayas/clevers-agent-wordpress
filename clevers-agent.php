@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Clevers Website Monitoring Agent
  * Description: Sends periodic site health reports to Clevers Website Monitoring.
- * Version: 1.0.2
+ * Version: 1.0.3
  * Author: Clevers
  * Text Domain: clevers-agent
  * License: GPL-2.0-or-later
