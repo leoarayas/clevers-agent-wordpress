@@ -14,6 +14,7 @@ permissions:
   contents: write
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   PLUGIN_SLUG: clevers-agent
   PLUGIN_MAIN: clevers-agent.php
   DISTIGNORE: .distignore
@@ -25,7 +26,7 @@ jobs:
 
     steps:
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
@@ -37,9 +38,9 @@ jobs:
           tools: composer
 
       - name: Set up Node (optional)
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Composer install (no-dev)
         if: hashFiles('composer.json') != ''
@@ -95,6 +96,26 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve release tag for upload
+        id: rel
+        shell: bash
+        run: |
+          TAG_NAME=""
+          if [ "${GITHUB_EVENT_NAME}" = "release" ]; then
+            TAG_NAME="${GITHUB_REF_NAME}"
+          elif [ -n "${{ inputs.ref }}" ]; then
+            case "${{ inputs.ref }}" in
+              refs/tags/*)
+                TAG_NAME="${{ inputs.ref }}"
+                TAG_NAME="${TAG_NAME#refs/tags/}"
+                ;;
+              v*)
+                TAG_NAME="${{ inputs.ref }}"
+                ;;
+            esac
+          fi
+          echo "tag_name=$TAG_NAME" >> "$GITHUB_OUTPUT"
+
       - name: Zip plugin
         shell: bash
         run: |
@@ -103,9 +124,10 @@ jobs:
           ls -lh dist
 
       - name: Attach ZIP to GitHub Release
-        if: github.event_name == 'release'
+        if: steps.rel.outputs.tag_name != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.rel.outputs.tag_name }}
           files: ${{ env.BUILD_ROOT }}/dist/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

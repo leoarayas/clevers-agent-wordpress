@@ -21,13 +21,20 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  PLUGIN_SLUG: clevers-agent
+  PLUGIN_MAIN: clevers-agent.php
+  DISTIGNORE: .distignore
+  BUILD_ROOT: .release-build
+
 jobs:
   release:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ inputs.target_branch }}
@@ -37,6 +44,12 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.2'
+          tools: composer
+
+      - name: Set up Node (optional)
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
 
       - name: Validate version input
         shell: bash
@@ -82,10 +95,47 @@ jobs:
           git push origin "v${{ inputs.version }}"
 
       - name: Create GitHub release
+        id: create_release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ inputs.version }}
           generate_release_notes: true
           draft: ${{ inputs.draft_release }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
+
+      - name: Prepare build folders
+        shell: bash
+        run: |
+          rm -rf "$BUILD_ROOT"
+          mkdir -p "$BUILD_ROOT/dist" "$BUILD_ROOT/$PLUGIN_SLUG"
+
+      - name: Stage plugin files
+        shell: bash
+        run: |
+          RSYNC_EXCLUDES=()
+          if [ -f "$DISTIGNORE" ]; then
+            RSYNC_EXCLUDES+=(--exclude-from="$DISTIGNORE")
+          fi
+          rsync -a \
+            --exclude "$PLUGIN_SLUG" \
+            --exclude "$BUILD_ROOT" \
+            "${RSYNC_EXCLUDES[@]}" \
+            ./ "$BUILD_ROOT/$PLUGIN_SLUG"
+
+      - name: Zip plugin
+        if: ${{ !inputs.draft_release }}
+        shell: bash
+        run: |
+          cd "$BUILD_ROOT"
+          zip -r "dist/${PLUGIN_SLUG}-${{ inputs.version }}.zip" "$PLUGIN_SLUG"
+          ls -lh dist
+
+      - name: Attach ZIP to GitHub Release
+        if: ${{ !inputs.draft_release }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          files: ${{ env.BUILD_ROOT }}/dist/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_BOT_TOKEN }}
