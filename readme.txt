@@ -8,23 +8,23 @@ Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Short Description: Envía reportes periódicos del estado de WordPress a Clevers Website Monitoring.
+Short Description: Sends periodic WordPress status reports to Clevers Website Monitoring.
 
 == Description ==
-Envía reportes periódicos del sitio WordPress a Clevers Website Monitoring para visibilidad de core, plugins, themes y health.
+Sends periodic reports from your WordPress site to Clevers Website Monitoring for visibility into core, plugins, themes, and site health.
 
 == Installation ==
-1. Copia la carpeta `clevers-agent` en `wp-content/plugins/`.
-2. Activa el plugin desde el panel de Plugins.
-3. Ve a Ajustes > Clevers Agent y configura Agent Key, Endpoint URL e intervalo.
+1. Copy the `clevers-agent` folder into `wp-content/plugins/`.
+2. Activate the plugin from the Plugins screen.
+3. Go to Settings > Clevers Agent and configure the Agent Key, Endpoint URL, and interval.
 
 == Frequently Asked Questions ==
-= ¿Qué envía el agente? =
-Versiones de WordPress/PHP, listado de plugins y themes, y resumen de actualizaciones.
+= What does the agent send? =
+WordPress and PHP versions, the list of plugins and themes, and a summary of available updates.
 
-= ¿Cómo envío un reporte manual? =
-En la pantalla de Ajustes > Clevers Agent, usa el botón "Send now".
+= How do I send a manual report? =
+On the Settings > Clevers Agent screen, use the "Send now" button.
 
 == Changelog ==
 = 1.0.0 =
-* Versión inicial.
+* Initial release.
