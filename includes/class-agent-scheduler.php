@@ -6,9 +6,7 @@ if (!defined('ABSPATH')) {
 
 class Clevers_Agent_Scheduler {
     const CRON_HOOK = 'clevers_agent_send_report';
-    const POLL_CRON_HOOK = 'clevers_agent_poll_commands';
     const SCHEDULE_KEY = 'clevers_agent_interval';
-    const POLL_SCHEDULE_KEY = 'clevers_agent_poll_interval';
 
     private $reporter;
 
@@ -29,11 +27,6 @@ class Clevers_Agent_Scheduler {
             'display' => sprintf('Clevers Agent every %d hour(s)', $hours),
         );
 
-        $schedules[self::POLL_SCHEDULE_KEY] = array(
-            'interval' => 5 * MINUTE_IN_SECONDS,
-            'display' => 'Clevers Agent remote poll every 5 minutes',
-        );
-
         return $schedules;
     }
 
@@ -46,15 +39,10 @@ class Clevers_Agent_Scheduler {
         if (!wp_next_scheduled(self::CRON_HOOK)) {
             wp_schedule_event(time() + 60, self::SCHEDULE_KEY, self::CRON_HOOK);
         }
-
-        if (!wp_next_scheduled(self::POLL_CRON_HOOK)) {
-            wp_schedule_event(time() + 120, self::POLL_SCHEDULE_KEY, self::POLL_CRON_HOOK);
-        }
     }
 
     public function clear() {
         wp_clear_scheduled_hook(self::CRON_HOOK);
-        wp_clear_scheduled_hook(self::POLL_CRON_HOOK);
     }
 
     public function reschedule($old_value, $value) {
