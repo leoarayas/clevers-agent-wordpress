@@ -27,6 +27,24 @@ WordPress and PHP versions, the list of plugins and themes, and a summary of ava
 = How do I send a manual report? =
 On the Settings > Clevers Agent screen, use the "Send now" button.
 
+= What API endpoints does the plugin expose? =
+The plugin registers one REST endpoint:
+
+* `GET /wp-json/clevers-agent/v1/status` — Returns plugin status, version, and telemetry data. Requires `manage_options` capability.
+
+= How does the plugin communicate with the monitoring backend? =
+The plugin sends HTTP POST requests to the configured endpoint URL with the path `/api/website-monitoring/agent/report`. Authentication is via the `X-Website-Agent-Key` header. The payload is JSON with the following structure:
+
+```json
+{
+  "wordpress": { "version": "...", "multisite": false, "debug": false },
+  "php": { "version": "..." },
+  "plugins": [ { "name": "...", "slug": "...", "version": "...", "active": true, "update_available": false } ],
+  "themes": [ { "name": "...", "slug": "...", "version": "...", "active": true, "update_available": false } ],
+  "health": { "updates": { "core": 0, "plugins": 0, "themes": 0, "total": 0 }, "errors_last_24h": 0, "warnings_last_24h": 0 }
+}
+```
+
 == Changelog ==
 = 1.1.0 =
 * Split the product line into monitoring-only and remote-management variants.
