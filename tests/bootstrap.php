@@ -8,6 +8,12 @@ define('CLEVERS_AGENT_OPTIONS_KEY', 'clevers_agent_options');
 define('CLEVERS_AGENT_LAST_SENT_AT', 'clevers_agent_last_sent_at');
 define('CLEVERS_AGENT_LAST_RESPONSE_CODE', 'clevers_agent_last_response_code');
 define('CLEVERS_AGENT_LAST_ERROR', 'clevers_agent_last_error');
+define('CLEVERS_AGENT_LAST_EMERGENCY_AT', 'clevers_agent_last_emergency_at');
+define('CLEVERS_AGENT_LAST_FATAL_ERROR', 'clevers_agent_last_fatal_error');
+
+if (!defined('MINUTE_IN_SECONDS')) {
+    define('MINUTE_IN_SECONDS', 60);
+}
 
 if (!defined('HOUR_IN_SECONDS')) {
     define('HOUR_IN_SECONDS', 3600);
@@ -107,6 +113,21 @@ function get_site_transient($transient) {
     return $GLOBALS['mock_state']['transients'][$transient] ?? false;
 }
 
+function get_transient($transient) {
+    return $GLOBALS['mock_state']['transients'][$transient] ?? false;
+}
+
+function set_transient($transient, $value, $expiration = 0) {
+    unset($expiration);
+    $GLOBALS['mock_state']['transients'][$transient] = $value;
+    return true;
+}
+
+function delete_transient($transient) {
+    unset($GLOBALS['mock_state']['transients'][$transient]);
+    return true;
+}
+
 function wp_get_themes() {
     return array();
 }
@@ -120,7 +141,10 @@ function get_core_updates() {
 }
 
 function wp_remote_post($url, $args = array()) {
-    unset($url, $args);
+    $GLOBALS['mock_state']['last_remote_post'] = array(
+        'url' => $url,
+        'args' => $args,
+    );
     return array('response' => array('code' => 200));
 }
 

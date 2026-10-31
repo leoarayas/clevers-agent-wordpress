@@ -3,7 +3,7 @@ Contributors: clevers, cleversdev
 Tags: monitoring, health, reporting
 Requires at least: 6.0
 Tested up to: 7.1
-Stable tag: 1.1.0
+Stable tag: 1.2.0
 Requires PHP: 7.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
@@ -46,6 +46,11 @@ The plugin sends HTTP POST requests to the configured endpoint URL with the path
 ```
 
 == Changelog ==
+= 1.2.0 =
+* Feature: Active emergency ping for fatal errors (E_ERROR, E_PARSE, E_COMPILE_ERROR) via shutdown handler.
+* Throttling: 5-minute cooldown to prevent alert flooding during recurring crashes.
+* Telemetry: Emergency error details recorded and surfaced on the admin settings dashboard.
+
 = 1.1.0 =
 * Split the product line into monitoring-only and remote-management variants.
 * Removed remote registration, polling, heartbeat, and command execution from this plugin.

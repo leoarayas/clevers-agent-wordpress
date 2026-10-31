@@ -60,6 +60,8 @@ class Clevers_Agent_Admin {
         $last_sent = get_option(CLEVERS_AGENT_LAST_SENT_AT, '');
         $last_code = get_option(CLEVERS_AGENT_LAST_RESPONSE_CODE, '');
         $last_error = get_option(CLEVERS_AGENT_LAST_ERROR, '');
+        $last_emergency = get_option('clevers_agent_last_emergency_at', '');
+        $last_fatal = get_option('clevers_agent_last_fatal_error', null);
 
         $next_report = wp_next_scheduled(Clevers_Agent_Scheduler::CRON_HOOK);
 
@@ -97,6 +99,19 @@ class Clevers_Agent_Admin {
                         <th>Ultimo error</th>
                         <td><?php echo esc_html($last_error ?: 'Sin datos'); ?></td>
                     </tr>
+                    <tr>
+                        <th>Alerta de emergencia (fatal error)</th>
+                        <td><?php echo esc_html($last_emergency ?: 'Ninguno detectado'); ?></td>
+                    </tr>
+                    <?php if (!empty($last_fatal) && is_array($last_fatal)) : ?>
+                    <tr>
+                        <th>Detalle último error fatal</th>
+                        <td>
+                            <code><?php echo esc_html(($last_fatal['type_name'] ?? 'Fatal') . ': ' . ($last_fatal['message'] ?? '')); ?></code><br>
+                            <small><?php echo esc_html(($last_fatal['file'] ?? '') . ':' . ($last_fatal['line'] ?? '')); ?></small>
+                        </td>
+                    </tr>
+                    <?php endif; ?>
                     <tr>
                         <th>Proximo reporte (cron)</th>
                         <td><?php echo esc_html($this->format_scheduled_time($next_report)); ?></td>

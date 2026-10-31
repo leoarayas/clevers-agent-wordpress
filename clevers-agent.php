@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Clevers Monitoring Agent
  * Description: Sends periodic site health reports to Clevers Monitoring.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: Clevers
  * Text Domain: clevers-agent
  * License: GPL-2.0-or-later
@@ -13,7 +13,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('CLEVERS_AGENT_VERSION', '1.1.0');
+define('CLEVERS_AGENT_VERSION', '1.2.0');
 define('CLEVERS_AGENT_PLUGIN_FILE', __FILE__);
 define('CLEVERS_AGENT_PLUGIN_DIR', plugin_dir_path(__FILE__));
 
@@ -22,6 +22,8 @@ define('CLEVERS_AGENT_OPTIONS_KEY', 'clevers_agent_options');
 define('CLEVERS_AGENT_LAST_SENT_AT', 'clevers_agent_last_sent_at');
 define('CLEVERS_AGENT_LAST_RESPONSE_CODE', 'clevers_agent_last_response_code');
 define('CLEVERS_AGENT_LAST_ERROR', 'clevers_agent_last_error');
+define('CLEVERS_AGENT_LAST_EMERGENCY_AT', 'clevers_agent_last_emergency_at');
+define('CLEVERS_AGENT_LAST_FATAL_ERROR', 'clevers_agent_last_fatal_error');
 
 require_once CLEVERS_AGENT_PLUGIN_DIR . 'includes/class-agent-reporter.php';
 require_once CLEVERS_AGENT_PLUGIN_DIR . 'includes/class-agent-scheduler.php';
@@ -58,6 +60,7 @@ register_deactivation_hook(__FILE__, 'clevers_agent_deactivate');
 
 add_action('plugins_loaded', function () {
     $reporter = new Clevers_Agent_Reporter();
+    $reporter->register_shutdown_handler();
     $scheduler = new Clevers_Agent_Scheduler($reporter);
     new Clevers_Agent_Admin($reporter, $scheduler);
 });
@@ -85,6 +88,8 @@ add_action('rest_api_init', function () {
                     'last_sent_at' => get_option(CLEVERS_AGENT_LAST_SENT_AT, ''),
                     'last_response_code' => get_option(CLEVERS_AGENT_LAST_RESPONSE_CODE, ''),
                     'last_error' => get_option(CLEVERS_AGENT_LAST_ERROR, ''),
+                    'last_emergency_at' => get_option(CLEVERS_AGENT_LAST_EMERGENCY_AT, ''),
+                    'last_fatal_error' => get_option(CLEVERS_AGENT_LAST_FATAL_ERROR, null),
                     'next_report_at' => wp_next_scheduled(Clevers_Agent_Scheduler::CRON_HOOK),
                 ),
             ));

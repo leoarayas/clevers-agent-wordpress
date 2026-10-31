@@ -265,4 +265,125 @@ class Clevers_Agent_Reporter {
 
         return $timestamp;
     }
+
+    public function register_shutdown_handler(): void {
+        register_shutdown_function(array($this, 'handle_shutdown'));
+    }
+
+    public function handle_shutdown(): void {
+        $error = error_get_last();
+        if (!$error || !is_array($error)) {
+            return;
+        }
+
+        $fatal_types = array(
+            E_ERROR,
+            E_PARSE,
+            E_CORE_ERROR,
+            E_COMPILE_ERROR,
+            E_USER_ERROR,
+        );
+
+        if (!in_array((int) ($error['type'] ?? 0), $fatal_types, true)) {
+            return;
+        }
+
+        $this->send_emergency_ping($error);
+    }
+
+    public function send_emergency_ping(array $error, bool $force = false) {
+        $options = clevers_agent_get_options();
+
+        if (empty($options['enabled'])) {
+            return false;
+        }
+
+        $agent_key = isset($options['agent_key']) ? trim($options['agent_key']) : '';
+        if ($agent_key === '') {
+            return false;
+        }
+
+        $endpoint = $this->build_endpoint($options['endpoint_url']);
+        if (!$endpoint) {
+            return false;
+        }
+
+        // Throttle emergency pings to max 1 per 5 minutes to avoid flood loops during persistent fatals
+        if (!$force) {
+            $transient_key = 'clevers_agent_emergency_throttle';
+            if (function_exists('get_transient') && get_transient($transient_key)) {
+                return false;
+            }
+            if (function_exists('set_transient')) {
+                set_transient($transient_key, 1, 5 * MINUTE_IN_SECONDS);
+            }
+        }
+
+        $type_int = (int) ($error['type'] ?? 0);
+        $type_name = $this->get_error_type_name($type_int);
+
+        $payload = array(
+            'is_emergency' => true,
+            'event_type' => 'fatal_error',
+            'occurred_at' => current_time('mysql'),
+            'error' => array(
+                'type' => $type_int,
+                'type_name' => $type_name,
+                'message' => (string) ($error['message'] ?? ''),
+                'file' => (string) ($error['file'] ?? ''),
+                'line' => (int) ($error['line'] ?? 0),
+            ),
+            'server' => array(
+                'request_uri' => isset($_SERVER['REQUEST_URI']) ? (string) $_SERVER['REQUEST_URI'] : '',
+                'request_method' => isset($_SERVER['REQUEST_METHOD']) ? (string) $_SERVER['REQUEST_METHOD'] : '',
+                'http_host' => isset($_SERVER['HTTP_HOST']) ? (string) $_SERVER['HTTP_HOST'] : '',
+            ),
+            'wordpress' => array(
+                'version' => function_exists('get_bloginfo') ? get_bloginfo('version') : '',
+            ),
+            'php' => array(
+                'version' => PHP_VERSION,
+            ),
+        );
+
+        if (defined('CLEVERS_AGENT_LAST_FATAL_ERROR')) {
+            update_option(CLEVERS_AGENT_LAST_FATAL_ERROR, $payload['error']);
+        }
+        if (defined('CLEVERS_AGENT_LAST_EMERGENCY_AT')) {
+            update_option(CLEVERS_AGENT_LAST_EMERGENCY_AT, current_time('mysql'));
+        }
+
+        $args = array(
+            'timeout' => 5,
+            'headers' => array(
+                'Content-Type' => 'application/json; charset=utf-8',
+                'X-Website-Agent-Key' => $agent_key,
+                'X-Clevers-Emergency' => 'fatal-error',
+            ),
+            'body' => wp_json_encode($payload),
+        );
+
+        return wp_remote_post($endpoint, $args);
+    }
+
+    public function get_error_type_name(int $type): string {
+        switch ($type) {
+            case E_ERROR:
+                return 'E_ERROR';
+            case E_PARSE:
+                return 'E_PARSE';
+            case E_CORE_ERROR:
+                return 'E_CORE_ERROR';
+            case E_COMPILE_ERROR:
+                return 'E_COMPILE_ERROR';
+            case E_USER_ERROR:
+                return 'E_USER_ERROR';
+            case E_WARNING:
+                return 'E_WARNING';
+            case E_NOTICE:
+                return 'E_NOTICE';
+            default:
+                return 'E_UNKNOWN (' . $type . ')';
+        }
+    }
 }
