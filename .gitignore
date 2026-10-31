@@ -1,2 +1,4 @@
 .idea
 .release-build
+.phpunit.result.cache
+vendor/

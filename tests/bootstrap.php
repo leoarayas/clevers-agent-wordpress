@@ -167,5 +167,21 @@ class WP_Error {
     }
 }
 
+function clevers_agent_get_options() {
+    $defaults = array(
+        'enabled' => true,
+        'agent_key' => '',
+        'endpoint_url' => '',
+        'interval_hours' => 6,
+    );
+
+    $options = get_option(CLEVERS_AGENT_OPTIONS_KEY, array());
+    if (!is_array($options)) {
+        $options = array();
+    }
+
+    return array_merge($defaults, $options);
+}
+
 require_once dirname(__DIR__) . '/includes/class-agent-reporter.php';
 require_once dirname(__DIR__) . '/includes/class-agent-scheduler.php';
