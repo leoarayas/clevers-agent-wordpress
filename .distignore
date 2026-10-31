@@ -9,7 +9,9 @@
 bin
 node_modules
 tests
-vendor/bin
+vendor
+composer.json
+composer.lock
 phpcs.xml*
 phpunit.xml*
 .phpunit.result.cache
