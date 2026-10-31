@@ -15,7 +15,13 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v4
 
+      - name: Stage clean distribution build
+        run: |
+          mkdir -p build/clevers-agent
+          rsync -a --exclude-from=.distignore --exclude="build" ./ build/clevers-agent/
+
       - name: Run WordPress Plugin Check
         uses: wordpress/plugin-check-action@v1
         with:
+          build-dir: build/clevers-agent
           ignore-warnings: true
